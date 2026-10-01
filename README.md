@@ -59,6 +59,12 @@ flowchart LR
     Reports -->|Send| SMTP
 ```
 
+### Full system diagram
+
+![ICTU Power Server Automation full system diagram](SystemArchitectureDiagram.png)
+
+*Caption: Source-aligned overview of the configuration, automation service, SSH controller flow, Telegram operations, persistent state, schedule, and SLA reporting. The PNG is rendered from the editable [SystemArchitectureDiagram.svg](SystemArchitectureDiagram.svg) source.*
+
 The service is the control point: it reads the configured secrets, evaluates the current local time, communicates with enabled server controllers over SSH, persists operational state, and sends operator-facing results through Telegram and email.
 
 ## Workflow
@@ -120,6 +126,8 @@ One-time scheduled actions are recorded in the state file so they run no more th
 ├── power_server_automation.py       # Main long-running service
 ├── example_env.env                  # Safe configuration template
 ├── README.md                        # GitHub documentation
+├── SystemArchitectureDiagram.png    # Rendered architecture visual used by the README
+├── SystemArchitectureDiagram.svg    # Editable source for the architecture visual
 └── docs/
     └── telegram-control-panel.svg   # README Telegram UI visual
 ```

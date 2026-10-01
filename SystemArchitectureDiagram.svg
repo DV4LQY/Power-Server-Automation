@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="950" viewBox="0 0 1600 950" role="img" aria-labelledby="title desc">
+  <title id="title">ICTU Power Server Automation architecture diagram</title>
+  <desc id="desc">Architecture overview showing configuration, the Python automation service, server controllers, Telegram, local state, scheduling, and SLA reporting.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fbfe; }
+      .header { fill: #ffffff; stroke: #d5e2ee; stroke-width: 2; }
+      .title { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 38px; font-weight: 700; fill: #102a56; }
+      .subtitle { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 20px; font-style: italic; fill: #50657e; }
+      .section { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 20px; font-weight: 700; fill: #ffffff; letter-spacing: .3px; }
+      .body { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 18px; fill: #17324d; }
+      .small { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 16px; fill: #40546a; }
+      .item { fill: #ffffff; stroke: #cad9e6; stroke-width: 1.5; }
+      .muted { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 15px; fill: #6a7f91; }
+      .arrowlabel { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 16px; font-weight: 600; fill: #38526d; }
+      .timeline-title { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 19px; font-weight: 700; fill: #735008; }
+      .timeline { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 17px; fill: #3e4e5c; }
+      .pill { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 15px; font-weight: 700; fill: #ffffff; }
+    </style>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2b6cb0"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b46c1"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b7791f"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f855a"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="950"/>
+  <rect class="header" x="35" y="25" width="1530" height="88" rx="20"/>
+  <text class="title" x="800" y="67" text-anchor="middle">ICTU Power Server Automation</text>
+  <text class="subtitle" x="800" y="96" text-anchor="middle">Server monitoring, scheduled control, notifications, and SLA reporting</text>
+
+  <!-- System flow arrows -->
+  <path d="M378 310 H430" fill="none" stroke="#2b6cb0" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <text class="arrowlabel" x="404" y="292" text-anchor="middle">secrets</text>
+  <path d="M860 310 H915" fill="none" stroke="#2f855a" stroke-width="4" marker-start="url(#arrow-green)" marker-end="url(#arrow-green)"/>
+  <text class="arrowlabel" x="887" y="292" text-anchor="middle">SSH</text>
+  <path d="M820 150 V132 H1406 V150" fill="none" stroke="#6b46c1" stroke-width="4" marker-start="url(#arrow-purple)" marker-end="url(#arrow-purple)"/>
+  <text class="arrowlabel" x="1113" y="127" text-anchor="middle">Telegram API</text>
+  <path d="M568 510 L248 550" fill="none" stroke="#2b6cb0" stroke-width="4" marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text class="arrowlabel" x="393" y="525" text-anchor="middle">read / write</text>
+  <path d="M645 510 V550" fill="none" stroke="#b7791f" stroke-width="4" marker-start="url(#arrow-amber)" marker-end="url(#arrow-amber)"/>
+  <text class="arrowlabel" x="655" y="537">clock</text>
+  <path d="M770 510 L1275 550" fill="none" stroke="#b7791f" stroke-width="4" marker-end="url(#arrow-amber)"/>
+  <text class="arrowlabel" x="1030" y="525" text-anchor="middle">reports</text>
+
+  <!-- Configuration -->
+  <g>
+    <rect x="48" y="150" width="330" height="315" rx="18" fill="#eff7ff" stroke="#2b6cb0" stroke-width="2.5"/>
+    <path d="M48 168a18 18 0 0 1 18-18h294a18 18 0 0 1 18 18v43H48z" fill="#1769aa"/>
+    <text class="section" x="68" y="179">1. CONFIGURATION &amp; SECRETS</text>
+    <rect class="item" x="68" y="215" width="290" height="54" rx="10"/>
+    <text class="body" x="88" y="248">.env • Vault • Keyring</text>
+    <rect class="item" x="68" y="281" width="290" height="54" rx="10"/>
+    <text class="body" x="88" y="314">SSH credentials and ports</text>
+    <rect class="item" x="68" y="347" width="290" height="54" rx="10"/>
+    <text class="body" x="88" y="380">SMTP • TG_TOKEN • TG_CHAT_ID</text>
+    <text class="muted" x="68" y="435">Environment variables are the final fallback.</text>
+  </g>
+
+  <!-- Automation service -->
+  <g>
+    <rect x="430" y="150" width="430" height="360" rx="22" fill="#f1f6ff" stroke="#193e7a" stroke-width="3"/>
+    <path d="M430 172a22 22 0 0 1 22-22h386a22 22 0 0 1 22 22v62H430z" fill="#122f63"/>
+    <text class="section" x="645" y="181" text-anchor="middle">2. AUTOMATION SERVICE</text>
+    <text x="645" y="211" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23px" font-weight="700" fill="#dbeafe">power_server_automation.py</text>
+    <rect class="item" x="455" y="236" width="380" height="45" rx="10"/>
+    <text class="body" x="476" y="265">Load settings and secret values</text>
+    <rect class="item" x="455" y="291" width="380" height="45" rx="10"/>
+    <text class="body" x="476" y="320">Evaluate schedule and poll Telegram</text>
+    <rect class="item" x="455" y="346" width="380" height="45" rx="10"/>
+    <text class="body" x="476" y="375">Control enabled servers concurrently</text>
+    <rect class="item" x="455" y="401" width="380" height="45" rx="10"/>
+    <text class="body" x="476" y="430">Update state, metrics, logs, and reports</text>
+    <text class="muted" x="645" y="479" text-anchor="middle">Long-running loop with retry and cooldown controls</text>
+  </g>
+
+  <!-- Controllers -->
+  <g>
+    <rect x="915" y="150" width="300" height="315" rx="18" fill="#f0fbf5" stroke="#2f855a" stroke-width="2.5"/>
+    <path d="M915 168a18 18 0 0 1 18-18h264a18 18 0 0 1 18 18v43H915z" fill="#287a50"/>
+    <text class="section" x="1065" y="179" text-anchor="middle">3. SERVER CONTROLLERS</text>
+    <rect class="item" x="937" y="215" width="256" height="66" rx="10"/>
+    <text class="body" x="958" y="244">Dell iDRAC</text>
+    <text class="small" x="958" y="267">racadm power status / on / off</text>
+    <rect class="item" x="937" y="294" width="256" height="66" rx="10"/>
+    <text class="body" x="958" y="323">BMC-compatible shell</text>
+    <text class="small" x="958" y="346">/system1/pwrmgtsvc1</text>
+    <rect x="937" y="385" width="256" height="42" rx="21" fill="#d9f2e4"/>
+    <text x="1065" y="413" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18px" font-weight="700" fill="#236b45">SSH / Paramiko</text>
+  </g>
+
+  <!-- Telegram -->
+  <g>
+    <rect x="1260" y="150" width="292" height="315" rx="18" fill="#f8f4ff" stroke="#6b46c1" stroke-width="2.5"/>
+    <path d="M1260 168a18 18 0 0 1 18-18h256a18 18 0 0 1 18 18v43h-292z" fill="#5d3aa7"/>
+    <text class="section" x="1406" y="179" text-anchor="middle">4. TELEGRAM</text>
+    <rect class="item" x="1282" y="215" width="248" height="48" rx="10"/>
+    <text class="body" x="1302" y="246">Control panel and buttons</text>
+    <rect class="item" x="1282" y="274" width="248" height="48" rx="10"/>
+    <text class="body" x="1302" y="305">/start • /menu • /schedule</text>
+    <rect class="item" x="1282" y="333" width="248" height="48" rx="10"/>
+    <text class="body" x="1302" y="364">Status • power • SLA graph</text>
+    <rect x="1282" y="401" width="248" height="38" rx="19" fill="#ebe1ff"/>
+    <text x="1406" y="426" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16px" font-weight="700" fill="#55309c">Access restricted by TG_CHAT_ID</text>
+  </g>
+
+  <!-- Local state -->
+  <g>
+    <rect x="48" y="550" width="330" height="305" rx="18" fill="#eff7ff" stroke="#2b6cb0" stroke-width="2.5"/>
+    <path d="M48 568a18 18 0 0 1 18-18h294a18 18 0 0 1 18 18v43H48z" fill="#1769aa"/>
+    <text class="section" x="68" y="579">5. LOCAL STATE</text>
+    <rect class="item" x="68" y="618" width="290" height="48" rx="10"/>
+    <text class="body" x="89" y="649">power_server.log</text>
+    <rect class="item" x="68" y="678" width="290" height="48" rx="10"/>
+    <text class="body" x="89" y="709">server_state.json</text>
+    <rect class="item" x="68" y="738" width="290" height="48" rx="10"/>
+    <text class="body" x="89" y="769">server_metrics.json</text>
+    <text class="muted" x="68" y="822">Rotating logs • replay guards • SLA data</text>
+  </g>
+
+  <!-- Scheduler -->
+  <g>
+    <rect x="430" y="550" width="550" height="305" rx="18" fill="#fff9ed" stroke="#b7791f" stroke-width="2.5"/>
+    <path d="M430 568a18 18 0 0 1 18-18h514a18 18 0 0 1 18 18v43H430z" fill="#a96912"/>
+    <text class="section" x="705" y="579" text-anchor="middle">6. AUTOMATION SCHEDULE</text>
+    <rect x="453" y="615" width="504" height="76" rx="12" fill="#ffffff" stroke="#e7ce9c" stroke-width="1.5"/>
+    <rect x="469" y="630" width="112" height="28" rx="14" fill="#2b6cb0"/>
+    <text class="pill" x="525" y="650" text-anchor="middle">MON–FRI</text>
+    <text class="timeline" x="600" y="646">ON 6:30 • Recovery 7:00–16:00</text>
+    <text class="timeline" x="469" y="676">Refresh 20:00–22:15 • OFF 22:15 • Summary 22:30</text>
+    <rect x="453" y="704" width="504" height="76" rx="12" fill="#ffffff" stroke="#e7ce9c" stroke-width="1.5"/>
+    <rect x="469" y="719" width="112" height="28" rx="14" fill="#6b46c1"/>
+    <text class="pill" x="525" y="739" text-anchor="middle">SAT–SUN</text>
+    <text class="timeline" x="600" y="735">ON 7:30 • Recovery 8:00–16:00</text>
+    <text class="timeline" x="469" y="765">Refresh 20:00–20:15 • OFF 20:15 • Summary 21:30</text>
+    <rect x="453" y="796" width="504" height="38" rx="19" fill="#f7e6bf"/>
+    <text class="timeline-title" x="705" y="821" text-anchor="middle">MONTHLY SLA • Day 1 after 9:00 AM</text>
+  </g>
+
+  <!-- Reporting -->
+  <g>
+    <rect x="1032" y="550" width="520" height="305" rx="18" fill="#fff7ec" stroke="#b35c00" stroke-width="2.5"/>
+    <path d="M1032 568a18 18 0 0 1 18-18h484a18 18 0 0 1 18 18v43h-520z" fill="#a95300"/>
+    <text class="section" x="1292" y="579" text-anchor="middle">7. EMAIL &amp; SLA REPORTING</text>
+    <rect class="item" x="1057" y="620" width="470" height="55" rx="10"/>
+    <text class="body" x="1080" y="648">On-demand: graph to Telegram</text>
+    <text class="small" x="1080" y="668">Graph + detailed CSV sent by email</text>
+    <rect class="item" x="1057" y="690" width="470" height="55" rx="10"/>
+    <text class="body" x="1080" y="718">Monthly SLA: graph + PDF to email</text>
+    <text class="small" x="1080" y="738">Metrics reset after the report completes</text>
+    <rect x="1057" y="770" width="470" height="42" rx="21" fill="#fde7c6"/>
+    <text x="1292" y="798" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="18px" font-weight="700" fill="#995000">SMTP delivery and report attachments</text>
+    <text class="muted" x="1292" y="836" text-anchor="middle">All operational activity is written to the local log.</text>
+  </g>
+
+  <text x="800" y="912" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16px" fill="#64748b">Solid arrows: control and data flow • Purple: Telegram commands and notifications • Green: SSH server management</text>
+</svg>
