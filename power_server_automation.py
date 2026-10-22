@@ -59,6 +59,15 @@ def get_secret(key, default=None):
     return os.getenv(key, default)
 
 # -------- CONFIG --------
+SERVER_MODE_AUTOMATION = "automation"
+SERVER_MODE_MANUAL = "manual"
+SERVER_MODE_DISABLED = "disabled"
+SERVER_MODES = {
+    SERVER_MODE_AUTOMATION,
+    SERVER_MODE_MANUAL,
+    SERVER_MODE_DISABLED,
+}
+
 SERVERS = [
     {
         "name": "ENGAS_SERVER-1-IDRAC",
@@ -67,7 +76,7 @@ SERVERS = [
         "type": "idrac",
         "username": get_secret("SSH1_USER"),
         "password": get_secret("SSH1_PASS"),
-        "enabled": True
+        "mode": SERVER_MODE_AUTOMATION
     },
     {
         "name": "NMS_SERVER-2-IDRAC",
@@ -76,7 +85,7 @@ SERVERS = [
         "type": "idrac",
         "username": get_secret("SSH2_USER"),
         "password": get_secret("SSH2_PASS"),
-        "enabled": False
+        "mode": SERVER_MODE_DISABLED
     },
     {
         "name": "ADDS_SERVER-3-BMC",
@@ -85,7 +94,7 @@ SERVERS = [
         "type": "bmc",
         "username": get_secret("SSH3_USER"),
         "password": get_secret("SSH3_PASS"),
-        "enabled": False
+        "mode": SERVER_MODE_DISABLED
     },
     {
         "name": "DEV_SERVER-4-BMC",
@@ -94,7 +103,7 @@ SERVERS = [
         "type": "bmc",
         "username": get_secret("SSH4_USER"),
         "password": get_secret("SSH4_PASS"),
-        "enabled": True
+        "mode": SERVER_MODE_AUTOMATION
     },
     {
         "name": "SERVER-5-BMC",
@@ -103,7 +112,7 @@ SERVERS = [
         "type": "bmc",
         "username": get_secret("SSH5_USER"),
         "password": get_secret("SSH5_PASS"),
-        "enabled": False
+        "mode": SERVER_MODE_DISABLED
     }
 ]
 
@@ -158,20 +167,33 @@ WEEKEND_FINAL_SUMMARY_TIME = dt_time(21, 30)
 
 log_lock = threading.Lock()
 
-def is_manual_only_server(server):
-    return bool(server.get("manual_only", False))
+def get_server_mode(server):
+    """Return the explicit mode, or map a legacy server definition safely."""
+    if "mode" in server:
+        mode = str(server["mode"]).strip().lower()
+        if mode in SERVER_MODES:
+            return mode
+        return SERVER_MODE_DISABLED
 
-def is_automated_server(server):
-    return bool(server.get("enabled", True)) and not is_manual_only_server(server)
+    # Backward compatibility for configurations written before ``mode`` existed.
+    if server.get("manual_only", False):
+        return SERVER_MODE_MANUAL
+    if not server.get("enabled", True):
+        return SERVER_MODE_DISABLED
+    return SERVER_MODE_AUTOMATION
 
-def is_manually_controllable_server(server):
-    return bool(server.get("enabled", True)) or is_manual_only_server(server)
+def is_automation_server(server):
+    return get_server_mode(server) == SERVER_MODE_AUTOMATION
 
-AUTOMATED_SERVERS = [s for s in SERVERS if is_automated_server(s)]
-MANUAL_CONTROL_SERVERS = [s for s in SERVERS if is_manually_controllable_server(s)]
+def is_manual_server(server):
+    return get_server_mode(server) == SERVER_MODE_MANUAL
 
-# Existing automated workflows use this alias. Manual-only servers are excluded.
-ACTIVE_SERVERS = AUTOMATED_SERVERS
+def is_power_controllable_server(server):
+    return get_server_mode(server) in (SERVER_MODE_AUTOMATION, SERVER_MODE_MANUAL)
+
+AUTOMATION_SERVERS = [s for s in SERVERS if is_automation_server(s)]
+MANUAL_SERVERS = [s for s in SERVERS if is_manual_server(s)]
+POWER_CONTROL_SERVERS = [s for s in SERVERS if is_power_controllable_server(s)]
 telegram_poll_health = {
     "consecutive_failures": 0,
     "next_retry_at": 0.0,
@@ -180,12 +202,12 @@ telegram_poll_health = {
 }
 telegram_missing_config_logged = False
 
-def log_active_servers():
-    automated = [f"{s['name']} ({s['host']}) [{s['type'].upper()}]" for s in ACTIVE_SERVERS]
+def log_automation_servers():
+    automated = [f"{s['name']} ({s['host']}) [{s['type'].upper()}]" for s in AUTOMATION_SERVERS]
     if automated:
-        log("AUTOMATED SERVERS: " + "; ".join(automated))
+        log("AUTOMATION SERVERS: " + "; ".join(automated))
     else:
-        log("AUTOMATED SERVERS: none")
+        log("AUTOMATION SERVERS: none")
 
 # -------- LOG --------
 def rotate_log_if_needed():
@@ -212,19 +234,29 @@ def log(msg):
         with open(LOG_FILE, "a") as f:
             f.write(line + "\n")
 
-def log_disabled_servers():
-    for s in SERVERS:
-        if not s.get("enabled", True) and not is_manual_only_server(s):
-            log(f"[DISABLED] Monitoring skipped for {s['name']} ({s['host']})")
+def log_invalid_server_modes():
+    for server in SERVERS:
+        if "mode" not in server:
+            continue
+        configured_mode = str(server["mode"]).strip().lower()
+        if configured_mode not in SERVER_MODES:
+            log(
+                f"[INVALID MODE] {server['name']} ({server['host']}) uses "
+                f"{server['mode']!r}; treating it as disabled."
+            )
 
-def log_manual_only_servers():
-    manual_only = [
+def log_disabled_servers():
+    for server in SERVERS:
+        if get_server_mode(server) == SERVER_MODE_DISABLED:
+            log(f"[DISABLED] All automation and Telegram controls skipped for {server['name']} ({server['host']})")
+
+def log_manual_servers():
+    manual = [
         f"{s['name']} ({s['host']}) [{s['type'].upper()}]"
-        for s in MANUAL_CONTROL_SERVERS
-        if is_manual_only_server(s)
+        for s in MANUAL_SERVERS
     ]
-    if manual_only:
-        log("MANUAL-ONLY SERVERS: " + "; ".join(manual_only))
+    if manual:
+        log("MANUAL SERVERS (Telegram buttons only): " + "; ".join(manual))
 
 # -------- JSON --------
 def load_json(path):
@@ -791,17 +823,16 @@ def normalize_server_identifier(value):
     return re.sub(r"[^a-z0-9]", "", str(value).lower())
 
 def get_server_mode_label(server):
-    if is_manual_only_server(server):
-        return "MANUAL ONLY"
-    if is_automated_server(server):
-        return "AUTOMATED"
-    return "DISABLED"
+    return get_server_mode(server).upper()
 
 def get_server_target_list():
+    if not POWER_CONTROL_SERVERS:
+        return "- No automation or manual server targets are configured."
+
     return "\n".join(
         f"- {server['name']} ({server['host']}) "
         f"[{get_server_mode_label(server)}]"
-        for server in SERVERS
+        for server in POWER_CONTROL_SERVERS
     )
 
 def telegram_response(text, reply_markup=None):
@@ -835,10 +866,10 @@ def build_server_menu(action):
         "poweroff": "Turn OFF"
     }
     rows = []
-    menu_servers = ACTIVE_SERVERS if action == "status" else MANUAL_CONTROL_SERVERS
+    menu_servers = AUTOMATION_SERVERS if action == "status" else POWER_CONTROL_SERVERS
 
     if action == "status":
-        rows.append([{"text": "📋 All Automated Servers", "callback_data": "action:summary"}])
+        rows.append([{"text": "📋 All Automation Servers", "callback_data": "action:summary"}])
 
     for server in menu_servers:
         rows.append([{
@@ -854,7 +885,7 @@ def get_server_callback_token(server):
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
 
 def get_server_by_callback_token(value, action):
-    candidates = ACTIVE_SERVERS if action == "status" else MANUAL_CONTROL_SERVERS
+    candidates = AUTOMATION_SERVERS if action == "status" else POWER_CONTROL_SERVERS
     for server in candidates:
         if get_server_callback_token(server) == value:
             return server
@@ -889,11 +920,12 @@ def build_telegram_help():
         "/getstatus <server_name_or_host>\n"
         "/poweron <server_name_or_host>\n"
         "/poweroff <server_name_or_host>\n"
-        "/summary - status of all automated servers\n"
+        "/summary - status of all automation servers\n"
         "/schedule - show the automation schedule\n"
         "/sendgraph or /send graph\n\n"
-        "Manual-only servers appear only in the Turn ON and Turn OFF button menus.\n\n"
-        "Configured servers:\n"
+        "Manual-mode servers appear only in the Turn ON and Turn OFF button menus.\n"
+        "Disabled servers are unavailable to automation and Telegram controls.\n\n"
+        "Available servers:\n"
         f"{get_server_target_list()}"
     )
 
@@ -936,7 +968,7 @@ def build_power_state_summary(title="📋 SERVER POWER STATE SUMMARY"):
 
     try:
         with ThreadPoolExecutor(max_workers=5) as executor:
-            list(executor.map(lambda s: refresh_server_state(s, st, mt), ACTIVE_SERVERS))
+            list(executor.map(lambda s: refresh_server_state(s, st, mt), AUTOMATION_SERVERS))
     except Exception as e:
         log(f"SUMMARY REFRESH ERROR {e}")
     finally:
@@ -944,7 +976,7 @@ def build_power_state_summary(title="📋 SERVER POWER STATE SUMMARY"):
         save_json(METRICS_FILE, mt)
 
     lines = [title]
-    for server in ACTIVE_SERVERS:
+    for server in AUTOMATION_SERVERS:
         host = server["host"]
         name = server["name"]
         current = st.get(host, {}).get("last_state", "UNKNOWN")
@@ -1010,7 +1042,7 @@ def manual_power_on(server):
         st.setdefault(host, {})["last_state"] = actual_state
         st.setdefault(host, {})["last_observed_power"] = actual_state
         st.setdefault(host, {})["initialized"] = True
-        if is_manual_only_server(server):
+        if is_manual_server(server):
             mt.pop(host, None)
         else:
             update_metrics(mt, host, final_state)
@@ -1072,7 +1104,7 @@ def manual_power_off(server):
         st.setdefault(host, {})["last_state"] = final_state
         st.setdefault(host, {})["last_observed_power"] = final_state
         st.setdefault(host, {})["initialized"] = True
-        if is_manual_only_server(server):
+        if is_manual_server(server):
             mt.pop(host, None)
         else:
             update_metrics(mt, host, final_state)
@@ -1108,7 +1140,7 @@ def handle_telegram_command(text):
     if command in ("/status", "/getstatus"):
         if not argument:
             return telegram_response(
-                "📋 Select an automated server to check:",
+                "📋 Select an automation server to check:",
                 build_server_menu("status")
             )
 
@@ -1121,10 +1153,17 @@ def handle_telegram_command(text):
                 text = f"❌ STATUS COMMAND FAILED\nServer not found: {argument}"
             return telegram_response(text, build_server_menu("status"))
 
-        if is_manual_only_server(server):
+        mode = get_server_mode(server)
+        if mode == SERVER_MODE_MANUAL:
             return telegram_response(
-                "⚠️ MANUAL-ONLY SERVER\n"
+                "⚠️ MANUAL SERVER\n"
                 "This server is excluded from status checks and can be controlled only with the Turn ON or Turn OFF buttons.",
+                build_main_menu()
+            )
+        if mode == SERVER_MODE_DISABLED:
+            return telegram_response(
+                "⚠️ DISABLED SERVER\n"
+                "This server is unavailable to automation and Telegram controls.",
                 build_main_menu()
             )
 
@@ -1137,7 +1176,7 @@ def handle_telegram_command(text):
     if command == "/poweron":
         if not argument:
             return telegram_response(
-                "🟢 Select an active server to turn ON:",
+                "🟢 Select a server to turn ON:",
                 build_server_menu("poweron")
             )
 
@@ -1150,11 +1189,18 @@ def handle_telegram_command(text):
                 text = f"❌ POWER ON FAILED\nServer not found: {argument}"
             return telegram_response(text, build_server_menu("poweron"))
 
-        if is_manual_only_server(server):
+        mode = get_server_mode(server)
+        if mode == SERVER_MODE_MANUAL:
             return telegram_response(
-                "⚠️ MANUAL-ONLY SERVER\n"
+                "⚠️ MANUAL SERVER\n"
                 "Use the Turn ON button to control this server.",
                 build_server_menu("poweron")
+            )
+        if mode == SERVER_MODE_DISABLED:
+            return telegram_response(
+                "⚠️ DISABLED SERVER\n"
+                "This server is unavailable to automation and Telegram controls.",
+                build_main_menu()
             )
 
         return telegram_response(manual_power_on(server), build_main_menu())
@@ -1162,7 +1208,7 @@ def handle_telegram_command(text):
     if command == "/poweroff":
         if not argument:
             return telegram_response(
-                "🔴 Select an active server to turn OFF:",
+                "🔴 Select a server to turn OFF:",
                 build_server_menu("poweroff")
             )
 
@@ -1175,11 +1221,18 @@ def handle_telegram_command(text):
                 text = f"❌ POWER OFF FAILED\nServer not found: {argument}"
             return telegram_response(text, build_server_menu("poweroff"))
 
-        if is_manual_only_server(server):
+        mode = get_server_mode(server)
+        if mode == SERVER_MODE_MANUAL:
             return telegram_response(
-                "⚠️ MANUAL-ONLY SERVER\n"
+                "⚠️ MANUAL SERVER\n"
                 "Use the Turn OFF button to control this server.",
                 build_server_menu("poweroff")
+            )
+        if mode == SERVER_MODE_DISABLED:
+            return telegram_response(
+                "⚠️ DISABLED SERVER\n"
+                "This server is unavailable to automation and Telegram controls.",
+                build_main_menu()
             )
 
         return telegram_response(manual_power_off(server), build_main_menu())
@@ -1212,11 +1265,11 @@ def handle_telegram_callback(callback_data):
     if callback_data == "menu:main":
         return telegram_response("🖥 SERVER CONTROL PANEL\nSelect an action:", build_main_menu())
     if callback_data == "menu:status":
-        return telegram_response("📋 Select an automated server to check:", build_server_menu("status"))
+        return telegram_response("📋 Select an automation server to check:", build_server_menu("status"))
     if callback_data == "menu:poweron":
-        return telegram_response("🟢 Select an active server to turn ON:", build_server_menu("poweron"))
+        return telegram_response("🟢 Select a server to turn ON:", build_server_menu("poweron"))
     if callback_data == "menu:poweroff":
-        return telegram_response("🔴 Select an active server to turn OFF:", build_server_menu("poweroff"))
+        return telegram_response("🔴 Select a server to turn OFF:", build_server_menu("poweroff"))
     if callback_data == "action:help":
         return telegram_response(build_telegram_help(), build_main_menu())
     if callback_data == "action:schedule":
@@ -1435,16 +1488,15 @@ def update_metrics(metrics, host, st):
 
     data["last"] = st
 
-def metrics_excluding_manual_only_servers(metrics):
-    manual_only_hosts = {
+def metrics_for_automation_servers(metrics):
+    automation_hosts = {
         str(server.get("host"))
-        for server in SERVERS
-        if is_manual_only_server(server)
+        for server in AUTOMATION_SERVERS
     }
     return {
         host: data
         for host, data in metrics.items()
-        if str(host) not in manual_only_hosts
+        if str(host) in automation_hosts
     }
 
 # -------- GRAPH --------
@@ -1623,7 +1675,7 @@ def generate_pdf_report(metrics, graph):
 
 # -------- SLA --------
 def send_sla():
-    metrics = metrics_excluding_manual_only_servers(load_json(METRICS_FILE))
+    metrics = metrics_for_automation_servers(load_json(METRICS_FILE))
     attachments = []
     body = []
 
@@ -1665,7 +1717,7 @@ def send_sla():
     save_json(METRICS_FILE, {})
 
 def send_adhoc_sla_graph():
-    metrics = metrics_excluding_manual_only_servers(load_json(METRICS_FILE))
+    metrics = metrics_for_automation_servers(load_json(METRICS_FILE))
     attachments = []
 
     if not metrics:
@@ -1894,7 +1946,7 @@ def send_status_summary(title):
 
     try:
         with ThreadPoolExecutor(max_workers=5) as executor:
-            list(executor.map(lambda s: refresh_server_state(s, st, mt), ACTIVE_SERVERS))
+            list(executor.map(lambda s: refresh_server_state(s, st, mt), AUTOMATION_SERVERS))
     except Exception as e:
         log(f"SUMMARY REFRESH ERROR {e}")
     finally:
@@ -1902,7 +1954,7 @@ def send_status_summary(title):
         save_json(METRICS_FILE, mt)
 
     lines = [title]
-    for server in ACTIVE_SERVERS:
+    for server in AUTOMATION_SERVERS:
         host = server["host"]
         name = server["name"]
         current = st.get(host, {}).get("last_state", "UNKNOWN")
@@ -1918,7 +1970,7 @@ def send_final_status(schedule_label):
 
     try:
         with ThreadPoolExecutor(max_workers=5) as executor:
-            list(executor.map(lambda s: refresh_server_state(s, st, mt), ACTIVE_SERVERS))
+            list(executor.map(lambda s: refresh_server_state(s, st, mt), AUTOMATION_SERVERS))
     except Exception as e:
         log(f"{schedule_label} STATUS REFRESH ERROR {e}")
     finally:
@@ -1926,7 +1978,7 @@ def send_final_status(schedule_label):
         save_json(METRICS_FILE, mt)
 
     lines = [f"📋 {schedule_label} FINAL SERVER STATUS"]
-    for server in ACTIVE_SERVERS:
+    for server in AUTOMATION_SERVERS:
         host = server["host"]
         name = server["name"]
         current = st.get(host, {}).get("last_state", "UNKNOWN")
@@ -2034,7 +2086,7 @@ def initialize_all_silently():
     mt = load_json(METRICS_FILE)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        list(executor.map(lambda s: initialize_server_silently(s, st, mt), ACTIVE_SERVERS))
+        list(executor.map(lambda s: initialize_server_silently(s, st, mt), AUTOMATION_SERVERS))
 
     st["_script_initialized"] = True
     st["_first_monitor_pending"] = True
@@ -2048,7 +2100,7 @@ def monitor():
     mt = load_json(METRICS_FILE)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        list(executor.map(lambda s: process_server(s, st, mt), ACTIVE_SERVERS))
+        list(executor.map(lambda s: process_server(s, st, mt), AUTOMATION_SERVERS))
 
     st["_first_monitor_pending"] = False
     save_json(STATE_FILE, st)
@@ -2060,7 +2112,7 @@ def refresh_all_states():
     mt = load_json(METRICS_FILE)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        list(executor.map(lambda s: refresh_server_state(s, st, mt), ACTIVE_SERVERS))
+        list(executor.map(lambda s: refresh_server_state(s, st, mt), AUTOMATION_SERVERS))
 
     save_json(STATE_FILE, st)
     save_json(METRICS_FILE, mt)
@@ -2073,7 +2125,7 @@ def morning_power_on_all(schedule_label):
     with ThreadPoolExecutor(max_workers=5) as executor:
         list(executor.map(
             lambda s: process_server_power_on_morning(s, st, mt, schedule_label),
-            ACTIVE_SERVERS
+            AUTOMATION_SERVERS
         ))
 
     save_json(STATE_FILE, st)
@@ -2086,7 +2138,7 @@ def force_off_all():
     mt = load_json(METRICS_FILE)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        list(executor.map(lambda s: process_server_force_off(s, st, mt), ACTIVE_SERVERS))
+        list(executor.map(lambda s: process_server_force_off(s, st, mt), AUTOMATION_SERVERS))
 
     save_json(STATE_FILE, st)
     save_json(METRICS_FILE, mt)
@@ -2094,9 +2146,10 @@ def force_off_all():
 
 # -------- MAIN --------
 if __name__ == "__main__":
+    log_invalid_server_modes()
     log_disabled_servers()
-    log_manual_only_servers()
-    log_active_servers()
+    log_manual_servers()
+    log_automation_servers()
     state = load_json(STATE_FILE)
 
     if not state.get("_script_initialized"):
@@ -2139,7 +2192,7 @@ if __name__ == "__main__":
             log(f"{power_on_label} checkpoint reached: starting scheduled power on")
             send_telegram(
                 f"🟢 {power_on_label} {day_group} SCHEDULED POWER ON STARTED\n"
-                "Processing enabled servers now."
+                "Processing automation-mode servers now."
             )
             morning_power_on_all(power_on_label)
 
@@ -2157,7 +2210,7 @@ if __name__ == "__main__":
                 send_telegram(
                     f"🟢 {day_group} RECOVERY MONITORING ACTIVE\n"
                     f"Window: {recovery_start_label} - {recovery_end_label}\n"
-                    "Checking enabled servers every 30 minutes."
+                    "Checking automation-mode servers every 30 minutes."
                 )
                 mark_ran_today(state, "_last_recovery_start_notice_date", now)
                 save_json(STATE_FILE, state)
@@ -2179,7 +2232,7 @@ if __name__ == "__main__":
                 send_telegram(
                     f"🟠 {day_group} FORCE-OFF MONITORING ACTIVE\n"
                     f"Window: {force_monitor_label} - {force_off_label}\n"
-                    "Refreshing enabled server states before scheduled force shutdown."
+                    "Refreshing automation-mode server states before scheduled force shutdown."
                 )
                 mark_ran_today(state, "_last_force_monitor_start_notice_date", now)
                 save_json(STATE_FILE, state)
@@ -2200,7 +2253,7 @@ if __name__ == "__main__":
                 log(f"{force_off_label} checkpoint reached: starting scheduled force shutdown")
                 send_telegram(
                     f"🔴 {force_off_label} {day_group} SCHEDULED FORCE SHUTDOWN STARTED\n"
-                    "Processing enabled servers now."
+                    "Processing automation-mode servers now."
                 )
                 mark_ran_today(state, "_last_force_off_start_notice_date", now)
                 save_json(STATE_FILE, state)

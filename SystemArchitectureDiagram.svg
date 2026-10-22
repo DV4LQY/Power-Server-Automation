@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="950" viewBox="0 0 1600 950" role="img" aria-labelledby="title desc">
   <title id="title">ICTU Power Server Automation architecture diagram</title>
-  <desc id="desc">Architecture overview showing configuration, the Python automation service, server controllers, Telegram, local state, scheduling, and SLA reporting.</desc>
+  <desc id="desc">Architecture overview showing configuration, server modes, the Python automation service, server controllers, Telegram, local state, scheduling, and SLA reporting.</desc>
   <defs>
     <style>
       .bg { fill: #f8fbfe; }
@@ -34,7 +34,7 @@
   <rect class="bg" width="1600" height="950"/>
   <rect class="header" x="35" y="25" width="1530" height="88" rx="20"/>
   <text class="title" x="800" y="67" text-anchor="middle">ICTU Power Server Automation</text>
-  <text class="subtitle" x="800" y="96" text-anchor="middle">Server monitoring, scheduled control, notifications, and SLA reporting</text>
+  <text class="subtitle" x="800" y="96" text-anchor="middle">Server modes, monitoring, scheduled control, notifications, and SLA reporting</text>
 
   <!-- System flow arrows -->
   <path d="M378 310 H430" fill="none" stroke="#2b6cb0" stroke-width="4" marker-end="url(#arrow-blue)"/>
@@ -61,7 +61,8 @@
     <text class="body" x="88" y="314">SSH credentials and ports</text>
     <rect class="item" x="68" y="347" width="290" height="54" rx="10"/>
     <text class="body" x="88" y="380">SMTP • TG_TOKEN • TG_CHAT_ID</text>
-    <text class="muted" x="68" y="435">Environment variables are the final fallback.</text>
+    <text class="muted" x="68" y="430">Mode: automation • manual • disabled</text>
+    <text class="muted" x="68" y="452">Environment variables are the final fallback.</text>
   </g>
 
   <!-- Automation service -->
@@ -75,10 +76,10 @@
     <rect class="item" x="455" y="291" width="380" height="45" rx="10"/>
     <text class="body" x="476" y="320">Evaluate schedule and poll Telegram</text>
     <rect class="item" x="455" y="346" width="380" height="45" rx="10"/>
-    <text class="body" x="476" y="375">Control automated servers concurrently</text>
+    <text class="body" x="476" y="375">Control automation-mode servers concurrently</text>
     <rect class="item" x="455" y="401" width="380" height="45" rx="10"/>
     <text class="body" x="476" y="430">Update state, metrics, logs, and reports</text>
-    <text class="muted" x="645" y="479" text-anchor="middle">Long-running loop with retry and cooldown controls</text>
+    <text class="muted" x="645" y="479" text-anchor="middle">Automation schedule • Telegram button-only manual control</text>
   </g>
 
   <!-- Controllers -->
@@ -102,11 +103,11 @@
     <path d="M1260 168a18 18 0 0 1 18-18h256a18 18 0 0 1 18 18v43h-292z" fill="#5d3aa7"/>
     <text class="section" x="1406" y="179" text-anchor="middle">4. TELEGRAM</text>
     <rect class="item" x="1282" y="215" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="246">Control panel + manual power</text>
+    <text class="body" x="1302" y="246">Control panel + power buttons</text>
     <rect class="item" x="1282" y="274" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="305">Manual-only: ON / OFF buttons</text>
+    <text class="body" x="1302" y="305">Manual mode: ON / OFF buttons</text>
     <rect class="item" x="1282" y="333" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="364">Status • schedule • SLA graph</text>
+    <text class="body" x="1302" y="364">Automation: status • schedule • SLA</text>
     <rect x="1282" y="401" width="248" height="38" rx="19" fill="#ebe1ff"/>
     <text x="1406" y="426" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16px" font-weight="700" fill="#55309c">Access restricted by TG_CHAT_ID</text>
   </g>

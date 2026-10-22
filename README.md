@@ -26,7 +26,7 @@ All visuals in this README use GitHub-supported Markdown, Mermaid, and repositor
 - Scheduled server power-on, recovery monitoring, force-off, and final status summaries
 - SSH control of Dell iDRAC and BMC-compatible management interfaces through Paramiko
 - Telegram command and inline-button interface for live status, power control, schedules, and SLA graphs
-- Manual-only server mode for Telegram Turn ON and Turn OFF buttons without automated scheduling
+- Explicit server modes: <code>automation</code>, <code>manual</code>, and <code>disabled</code>
 - Telegram notifications for scheduled activity, power changes, recoveries, failures, and summaries
 - Monthly SLA email reports with graph and PDF attachments
 - On-demand SLA graph delivery to Telegram, with graph and detailed CSV delivered by email
@@ -38,6 +38,7 @@ All visuals in this README use GitHub-supported Markdown, Mermaid, and repositor
 ```mermaid
 flowchart LR
     Secrets["Configuration and secrets"]
+    Modes["Server mode: automation / manual / disabled"]
     Scheduler["Internal schedule evaluator"]
     App["Python automation service"]
     Telegram["Telegram Bot API"]
@@ -49,6 +50,7 @@ flowchart LR
     Reports["SLA graph, CSV, and PDF"]
 
     Secrets --> App
+    Modes --> App
     Scheduler --> App
     Telegram -->|Commands and button callbacks| App
     App -->|Status, alerts, and graph| Telegram
@@ -66,14 +68,14 @@ flowchart LR
 
 *Caption: Source-aligned overview of the configuration, automation service, SSH controller flow, Telegram operations, persistent state, schedule, and SLA reporting. The PNG is rendered from the editable [SystemArchitectureDiagram.svg](SystemArchitectureDiagram.svg) source.*
 
-The service is the control point: it reads the configured secrets, evaluates the current local time, communicates with enabled server controllers over SSH, persists operational state, and sends operator-facing results through Telegram and email.
+The service is the control point: it reads the configured secrets and server modes, evaluates the current local time, communicates with automation-mode server controllers over SSH, persists operational state, and sends operator-facing results through Telegram and email. Manual-mode servers are available only through the Telegram **Turn ON** and **Turn OFF** buttons; disabled servers are not operated or shown in controls.
 
 ## Workflow
 
 ```mermaid
 flowchart TD
     Start([Service starts]) --> Load["Load configuration, state, and metrics"]
-    Load --> Init["Initialize automated servers once"]
+    Load --> Init["Initialize automation-mode servers once"]
     Init --> Loop["Continuous service loop"]
 
     Loop --> Poll["Poll Telegram updates"]
@@ -86,10 +88,10 @@ flowchart TD
     Persist --> Schedule
 
     Schedule{"What is due now?"}
-    Schedule -->|Power-on window| PowerOn["Power on automated servers"]
+    Schedule -->|Power-on window| PowerOn["Power on automation-mode servers"]
     Schedule -->|Recovery window| Monitor["Check servers every 30 minutes and recover OFF servers"]
     Schedule -->|Force-monitor window| Refresh["Refresh server states every 30 minutes before shutdown"]
-    Schedule -->|Force-off window| ForceOff["Force off enabled servers"]
+    Schedule -->|Force-off window| ForceOff["Force off automation-mode servers"]
     Schedule -->|Final-summary time| Summary["Refresh and send final status"]
     Schedule -->|Day 1 after 9:00 AM| SLA["Generate and email monthly SLA report"]
     Schedule -->|No action due| Sleep["Sleep until the next wake-up"]
@@ -109,16 +111,16 @@ One-time scheduled actions are recorded in the state file so they run no more th
 
 ![Telegram control panel mockup](docs/telegram-control-panel.svg)
 
-*Caption: The inline Telegram control panel shown after <code>/start</code> or <code>/menu</code>. Server-selection screens follow the Status, Turn ON, and Turn OFF actions; manual-only targets appear only under Turn ON and Turn OFF.*
+*Caption: The inline Telegram control panel shown after <code>/start</code> or <code>/menu</code>. Server-selection screens follow the Status, Turn ON, and Turn OFF actions; manual-mode targets appear only under Turn ON and Turn OFF. Disabled targets are hidden.*
 
 | Control | Result |
 |---|---|
-| **Server Status** | Opens a server selector and includes an option for all automated servers. |
+| **Server Status** | Opens a selector and includes an option for all automation-mode servers. |
 | **Schedule** | Shows the active weekday/weekend automation timetable. |
-| **Turn ON** | Opens a selector, then powers on the chosen server. This includes manual-only servers. |
-| **Turn OFF** | Opens a selector, then sends a force-off command to the chosen server. This includes manual-only servers. |
+| **Turn ON** | Opens a selector, then powers on the chosen server. This includes manual-mode servers. |
+| **Turn OFF** | Opens a selector, then sends a force-off command to the chosen server. This includes manual-mode servers. |
 | **Send SLA Graph** | Sends the current graph to Telegram and sends the graph plus detailed CSV to email. |
-| **Help** | Displays the supported text commands and configured server targets. |
+| **Help** | Displays the supported text commands and available server targets. |
 
 ## Project layout
 
@@ -233,7 +235,7 @@ The current script defines five server slots. It converts every <code>SSH*_PORT<
 
 ### Server definitions
 
-Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to set the server name, source environment slot, controller type, and whether the server is included in automated monitoring.
+Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to set the server name, source environment slot, controller type, and one explicit operating mode.
 
 ```python
 {
@@ -243,8 +245,7 @@ Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to
     "type": "idrac",
     "username": get_secret("SSH1_USER"),
     "password": get_secret("SSH1_PASS"),
-    "enabled": True,
-    "manual_only": False,
+    "mode": "automation",
 }
 ```
 
@@ -253,11 +254,17 @@ Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to
 | <code>idrac</code> | Dell iDRAC | <code>racadm serveraction</code> status, powerup, and powerdown actions |
 | <code>bmc</code> | BMC-compatible shell | Commands under <code>/system1/pwrmgtsvc1</code> |
 
-Set <code>"enabled": False</code> to exclude a server from scheduled monitoring and button-based server menus. The manual text-command lookup can still resolve configured server names or hosts.
+### Server modes
 
-### Manual-only servers
+Use exactly one of these values in each server definition:
 
-Set <code>"manual_only": True</code> for a server that operators may control exclusively through Telegram buttons:
+| <code>mode</code> | Behavior |
+|---|---|
+| <code>"automation"</code> | Participates in scheduled power-on, recovery, force-off, status summaries, SLA metrics, text commands, and Telegram button controls. |
+| <code>"manual"</code> | Appears only in the Telegram **Turn ON** and **Turn OFF** button menus. It has no scheduled actions, recovery checks, status checks, SLA metrics, or text-command access. |
+| <code>"disabled"</code> | Is fully inactive: it is excluded from automation, Telegram controls, status checks, and SLA reporting. |
+
+For example, configure a button-only target this way:
 
 ```python
 {
@@ -267,12 +274,23 @@ Set <code>"manual_only": True</code> for a server that operators may control exc
     "type": "idrac",
     "username": get_secret("SSH2_USER"),
     "password": get_secret("SSH2_PASS"),
-    "enabled": True,
-    "manual_only": True,
+    "mode": "manual",
 }
 ```
 
-Manual-only servers appear only in the **Turn ON** and **Turn OFF** button menus. They are excluded from scheduled power actions, recovery and force-off checks, status summaries, and SLA metrics. Text commands that target a manual-only server are intentionally rejected; use its Telegram button instead.
+The explicit <code>mode</code> field takes precedence. An unsupported value is treated as <code>"disabled"</code> and logged at service startup, which prevents accidental power operations.
+
+### Legacy configuration compatibility
+
+Older server definitions without <code>mode</code> remain supported while you migrate:
+
+| Legacy settings | Effective mode |
+|---|---|
+| <code>"manual_only": True</code> | <code>"manual"</code> |
+| <code>"enabled": False</code> | <code>"disabled"</code> |
+| No legacy flag, or <code>"enabled": True</code> | <code>"automation"</code> |
+
+Set <code>mode</code> for every server and remove the old flags when convenient. This makes the intended behavior unambiguous.
 
 ### Optional secret providers
 
@@ -303,16 +321,16 @@ The service only accepts messages and button callbacks from the chat ID stored i
 | Command | Purpose |
 |---|---|
 | <code>/start</code> or <code>/menu</code> | Open the control panel. |
-| <code>/help</code> | Show usage help and configured targets. |
+| <code>/help</code> | Show usage help and available targets. |
 | <code>/schedule</code> | Show the current timetable. |
-| <code>/status &lt;server_name_or_host&gt;</code> | Check one server; omit the argument to open the active-server selector. |
+| <code>/status &lt;server_name_or_host&gt;</code> | Check one automation-mode server; omit the argument to open the selector. |
 | <code>/getstatus &lt;server_name_or_host&gt;</code> | Alias for <code>/status</code>. |
-| <code>/poweron &lt;server_name_or_host&gt;</code> | Power on a server; omit the argument to open the selector. |
-| <code>/poweroff &lt;server_name_or_host&gt;</code> | Force off a server; omit the argument to open the selector. |
-| <code>/summary</code> | Refresh and return the status of all automated servers. |
+| <code>/poweron &lt;server_name_or_host&gt;</code> | Power on an automation-mode server; omit the argument to open the selector. |
+| <code>/poweroff &lt;server_name_or_host&gt;</code> | Force off an automation-mode server; omit the argument to open the selector. |
+| <code>/summary</code> | Refresh and return the status of all automation-mode servers. |
 | <code>/sendgraph</code> or <code>/send graph</code> | Generate an on-demand SLA graph and report bundle. |
 
-Manual-only servers are deliberately unavailable to the text-command interface. Select them from the **Turn ON** or **Turn OFF** button list.
+Manual-mode servers are deliberately unavailable to the text-command interface. Select them from the **Turn ON** or **Turn OFF** button list. Disabled servers are unavailable to all Telegram controls.
 
 Examples:
 
