@@ -26,6 +26,7 @@ All visuals in this README use GitHub-supported Markdown, Mermaid, and repositor
 - Scheduled server power-on, recovery monitoring, force-off, and final status summaries
 - SSH control of Dell iDRAC and BMC-compatible management interfaces through Paramiko
 - Telegram command and inline-button interface for live status, power control, schedules, and SLA graphs
+- Manual-only server mode for Telegram Turn ON and Turn OFF buttons without automated scheduling
 - Telegram notifications for scheduled activity, power changes, recoveries, failures, and summaries
 - Monthly SLA email reports with graph and PDF attachments
 - On-demand SLA graph delivery to Telegram, with graph and detailed CSV delivered by email
@@ -72,7 +73,7 @@ The service is the control point: it reads the configured secrets, evaluates the
 ```mermaid
 flowchart TD
     Start([Service starts]) --> Load["Load configuration, state, and metrics"]
-    Load --> Init["Initialize enabled servers once"]
+    Load --> Init["Initialize automated servers once"]
     Init --> Loop["Continuous service loop"]
 
     Loop --> Poll["Poll Telegram updates"]
@@ -85,7 +86,7 @@ flowchart TD
     Persist --> Schedule
 
     Schedule{"What is due now?"}
-    Schedule -->|Power-on window| PowerOn["Power on enabled servers"]
+    Schedule -->|Power-on window| PowerOn["Power on automated servers"]
     Schedule -->|Recovery window| Monitor["Check servers every 30 minutes and recover OFF servers"]
     Schedule -->|Force-monitor window| Refresh["Refresh server states every 30 minutes before shutdown"]
     Schedule -->|Force-off window| ForceOff["Force off enabled servers"]
@@ -108,14 +109,14 @@ One-time scheduled actions are recorded in the state file so they run no more th
 
 ![Telegram control panel mockup](docs/telegram-control-panel.svg)
 
-*Caption: The inline Telegram control panel shown after <code>/start</code> or <code>/menu</code>. It provides the same primary actions as the text-command interface; server-selection screens follow the Status, Turn ON, and Turn OFF actions.*
+*Caption: The inline Telegram control panel shown after <code>/start</code> or <code>/menu</code>. Server-selection screens follow the Status, Turn ON, and Turn OFF actions; manual-only targets appear only under Turn ON and Turn OFF.*
 
 | Control | Result |
 |---|---|
-| **Server Status** | Opens a server selector and includes an option for all active servers. |
+| **Server Status** | Opens a server selector and includes an option for all automated servers. |
 | **Schedule** | Shows the active weekday/weekend automation timetable. |
-| **Turn ON** | Opens a selector, then powers on the chosen server. |
-| **Turn OFF** | Opens a selector, then sends a force-off command to the chosen server. |
+| **Turn ON** | Opens a selector, then powers on the chosen server. This includes manual-only servers. |
+| **Turn OFF** | Opens a selector, then sends a force-off command to the chosen server. This includes manual-only servers. |
 | **Send SLA Graph** | Sends the current graph to Telegram and sends the graph plus detailed CSV to email. |
 | **Help** | Displays the supported text commands and configured server targets. |
 
@@ -243,6 +244,7 @@ Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to
     "username": get_secret("SSH1_USER"),
     "password": get_secret("SSH1_PASS"),
     "enabled": True,
+    "manual_only": False,
 }
 ```
 
@@ -251,7 +253,26 @@ Edit the <code>SERVERS</code> list in <code>power_server_automation.py</code> to
 | <code>idrac</code> | Dell iDRAC | <code>racadm serveraction</code> status, powerup, and powerdown actions |
 | <code>bmc</code> | BMC-compatible shell | Commands under <code>/system1/pwrmgtsvc1</code> |
 
-Set <code>"enabled": false</code> to exclude a server from scheduled monitoring and button-based server menus. The manual text-command lookup can still resolve configured server names or hosts.
+Set <code>"enabled": False</code> to exclude a server from scheduled monitoring and button-based server menus. The manual text-command lookup can still resolve configured server names or hosts.
+
+### Manual-only servers
+
+Set <code>"manual_only": True</code> for a server that operators may control exclusively through Telegram buttons:
+
+```python
+{
+    "name": "SERVER-2-MANUAL",
+    "host": get_secret("SSH2_HOST"),
+    "port": int(get_secret("SSH2_PORT")),
+    "type": "idrac",
+    "username": get_secret("SSH2_USER"),
+    "password": get_secret("SSH2_PASS"),
+    "enabled": True,
+    "manual_only": True,
+}
+```
+
+Manual-only servers appear only in the **Turn ON** and **Turn OFF** button menus. They are excluded from scheduled power actions, recovery and force-off checks, status summaries, and SLA metrics. Text commands that target a manual-only server are intentionally rejected; use its Telegram button instead.
 
 ### Optional secret providers
 
@@ -288,8 +309,10 @@ The service only accepts messages and button callbacks from the chat ID stored i
 | <code>/getstatus &lt;server_name_or_host&gt;</code> | Alias for <code>/status</code>. |
 | <code>/poweron &lt;server_name_or_host&gt;</code> | Power on a server; omit the argument to open the selector. |
 | <code>/poweroff &lt;server_name_or_host&gt;</code> | Force off a server; omit the argument to open the selector. |
-| <code>/summary</code> | Refresh and return the status of all active servers. |
+| <code>/summary</code> | Refresh and return the status of all automated servers. |
 | <code>/sendgraph</code> or <code>/send graph</code> | Generate an on-demand SLA graph and report bundle. |
+
+Manual-only servers are deliberately unavailable to the text-command interface. Select them from the **Turn ON** or **Turn OFF** button list.
 
 Examples:
 

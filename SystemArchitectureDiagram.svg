@@ -75,7 +75,7 @@
     <rect class="item" x="455" y="291" width="380" height="45" rx="10"/>
     <text class="body" x="476" y="320">Evaluate schedule and poll Telegram</text>
     <rect class="item" x="455" y="346" width="380" height="45" rx="10"/>
-    <text class="body" x="476" y="375">Control enabled servers concurrently</text>
+    <text class="body" x="476" y="375">Control automated servers concurrently</text>
     <rect class="item" x="455" y="401" width="380" height="45" rx="10"/>
     <text class="body" x="476" y="430">Update state, metrics, logs, and reports</text>
     <text class="muted" x="645" y="479" text-anchor="middle">Long-running loop with retry and cooldown controls</text>
@@ -102,11 +102,11 @@
     <path d="M1260 168a18 18 0 0 1 18-18h256a18 18 0 0 1 18 18v43h-292z" fill="#5d3aa7"/>
     <text class="section" x="1406" y="179" text-anchor="middle">4. TELEGRAM</text>
     <rect class="item" x="1282" y="215" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="246">Control panel and buttons</text>
+    <text class="body" x="1302" y="246">Control panel + manual power</text>
     <rect class="item" x="1282" y="274" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="305">/start • /menu • /schedule</text>
+    <text class="body" x="1302" y="305">Manual-only: ON / OFF buttons</text>
     <rect class="item" x="1282" y="333" width="248" height="48" rx="10"/>
-    <text class="body" x="1302" y="364">Status • power • SLA graph</text>
+    <text class="body" x="1302" y="364">Status • schedule • SLA graph</text>
     <rect x="1282" y="401" width="248" height="38" rx="19" fill="#ebe1ff"/>
     <text x="1406" y="426" text-anchor="middle" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="16px" font-weight="700" fill="#55309c">Access restricted by TG_CHAT_ID</text>
   </g>
